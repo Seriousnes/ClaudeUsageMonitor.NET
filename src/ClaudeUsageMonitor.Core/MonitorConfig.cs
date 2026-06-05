@@ -9,10 +9,28 @@ public class MonitorConfig
     public WidgetPosition WidgetPosition { get; set; } = new();
     public bool StartWithWindows { get; set; } = true;
     public bool ClickThrough { get; set; } = false;
+    public PaceSettings Pace { get; set; } = new();
 }
 
 public class WidgetPosition
 {
     public double? X { get; set; }
     public double? Y { get; set; }
+}
+
+/// <summary>
+/// Tunable thresholds for the pace-based icon colour and burn line. Holds the single source of
+/// truth for every default; <see cref="SessionPace"/> and <see cref="StatusCalculator"/> read from
+/// here and hardcode no threshold values. Projected = Session usage% / fraction-of-window-elapsed.
+/// </summary>
+public class PaceSettings
+{
+    public double YellowProjected { get; set; } = 95;
+    public double OrangeProjected { get; set; } = 115;
+    public double RedProjected { get; set; } = 140;
+    public double EarlyFloorStartPercent { get; set; } = 20;
+    public double EarlyFloorBasePercent { get; set; } = 5;
+    public double EarlyGracePercent { get; set; } = 15;
+    public double HighUsageOrange { get; set; } = 85;
+    public double HighUsageRed { get; set; } = 95;
 }

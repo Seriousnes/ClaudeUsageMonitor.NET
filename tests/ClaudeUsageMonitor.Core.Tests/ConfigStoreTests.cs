@@ -67,4 +67,37 @@ public class ConfigStoreTests
         Assert.DoesNotContain("\"PollIntervalSeconds\"", json);
         File.Delete(path);
     }
+
+    [Fact]
+    public void Load_missing_pace_uses_defaults()
+    {
+        var path = TempPath();
+        File.WriteAllText(path, """{ "pollIntervalSeconds": 15 }""");
+        var cfg = new ConfigStore(path).Load();
+        Assert.Equal(95.0, cfg.Pace.YellowProjected);
+        Assert.Equal(115.0, cfg.Pace.OrangeProjected);
+        Assert.Equal(140.0, cfg.Pace.RedProjected);
+        Assert.Equal(20.0, cfg.Pace.EarlyFloorStartPercent);
+        Assert.Equal(5.0, cfg.Pace.EarlyFloorBasePercent);
+        Assert.Equal(15.0, cfg.Pace.EarlyGracePercent);
+        Assert.Equal(85.0, cfg.Pace.HighUsageOrange);
+        Assert.Equal(95.0, cfg.Pace.HighUsageRed);
+        File.Delete(path);
+    }
+
+    [Fact]
+    public void Pace_round_trips()
+    {
+        var path = TempPath();
+        var cfg = new MonitorConfig();
+        cfg.Pace.RedProjected = 200;
+        cfg.Pace.HighUsageOrange = 70;
+        new ConfigStore(path).Save(cfg);
+
+        var loaded = new ConfigStore(path).Load();
+        Assert.Equal(200.0, loaded.Pace.RedProjected);
+        Assert.Equal(70.0, loaded.Pace.HighUsageOrange);
+        Assert.Equal(95.0, loaded.Pace.YellowProjected);   // untouched default preserved
+        File.Delete(path);
+    }
 }
