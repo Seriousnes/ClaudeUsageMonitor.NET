@@ -1,0 +1,26 @@
+<Window x:Class="ClaudeUsageMonitor.App.WidgetWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        WindowStyle="None" AllowsTransparency="True" Background="Transparent"
+        Topmost="True" ShowInTaskbar="False" ResizeMode="NoResize"
+        SizeToContent="Height" Width="280">
+    <Border CornerRadius="10" Background="#E61E1E1E" Padding="14">
+        <StackPanel>
+            <Grid x:Name="HeaderBar" Margin="0,0,0,8">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock x:Name="PlanText" Grid.Column="0" Foreground="#EEEEEE"
+                           FontWeight="SemiBold" Text="Claude" VerticalAlignment="Center"/>
+                <Button x:Name="RefreshButton" Grid.Column="1" Content="⟳" Width="22" Height="22"
+                        Background="Transparent" Foreground="#CCCCCC" BorderThickness="0" Cursor="Hand"/>
+                <Button x:Name="CloseButton" Grid.Column="2" Content="✕" Width="22" Height="22"
+                        Background="Transparent" Foreground="#CCCCCC" BorderThickness="0" Cursor="Hand"/>
+            </Grid>
+            <StackPanel x:Name="RowsPanel"/>
+            <TextBlock x:Name="EtaText" Margin="0,8,0,0" Visibility="Collapsed" TextWrapping="Wrap"/>
+        </StackPanel>
+    </Border>
+</Window>
