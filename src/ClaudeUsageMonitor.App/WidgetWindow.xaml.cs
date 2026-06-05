@@ -53,15 +53,14 @@ public partial class WidgetWindow : Window
 
         if (view.Freshness != Freshness.Live && view.Rows.Count > 0)
         {
-            // Recent and Stale both carry an age hint; Recent keeps real row colors, Stale greys them.
-            // Keep the activity readout visible alongside it (spec §7).
-            EtaText.Text = view.Burn is not null ? $"{view.AgeText}  ·  {FormatBurn(view.Burn)}" : view.AgeText;
+            // Degraded: tokens/hr only, never the pace countdown — projecting off an old reading misleads.
+            EtaText.Text = view.Burn is not null ? $"{view.AgeText}  ·  {FormatBurn(null, view.Burn)}" : view.AgeText;
             EtaText.Foreground = new SolidColorBrush(Color.FromRgb(0x9E, 0x9E, 0x9E));
             EtaText.Visibility = Visibility.Visible;
         }
-        else if (view.Freshness == Freshness.Live && view.Burn is not null)
+        else if (view.Freshness == Freshness.Live && (view.Pace?.TimeToLimit is not null || view.Burn is not null))
         {
-            EtaText.Text = FormatBurn(view.Burn);
+            EtaText.Text = FormatBurn(view.Pace, view.Burn);
             EtaText.Foreground = new SolidColorBrush(Color.FromRgb(0xF2, 0xC1, 0x4E));
             EtaText.Visibility = Visibility.Visible;
         }
@@ -71,16 +70,16 @@ public partial class WidgetWindow : Window
         }
     }
 
-    private static string FormatBurn(BurnEstimate burn)
+    private static string FormatBurn(PaceResult? pace, BurnEstimate? burn)
     {
-        if (burn.EtaSoonest is { } eta)
+        if (pace?.TimeToLimit is { } eta)
         {
             var human = eta < TimeSpan.FromHours(1)
                 ? $"~{(int)eta.TotalMinutes} min"
                 : $"~{(int)eta.TotalHours}h {eta.Minutes}m";
-            return $"⚠ {human} to {burn.EtaWindowLabel} limit";
+            return $"⚠ {human} to Session limit";
         }
-        return $"≈ {HumanNumber.Format(burn.TokensPerHour)} tok/hr";   // active but no projection
+        return burn is not null ? $"≈ {HumanNumber.Format(burn.TokensPerHour)} tok/hr" : "";
     }
 
     private static StackPanel BuildRow(WindowRow row, bool stale)

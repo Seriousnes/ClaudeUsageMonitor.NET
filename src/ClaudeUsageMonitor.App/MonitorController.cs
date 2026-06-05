@@ -9,7 +9,6 @@ public sealed class MonitorController : IDisposable
     private readonly string _projectsRoot;
 
     private readonly UsagePoller _poller;
-    private readonly EtaProjector _eta = new();
     private readonly AlertEngine _alerts;
     private readonly JsonlWatcher? _watcher;
     private readonly HttpClient _http = new();
@@ -59,7 +58,6 @@ public sealed class MonitorController : IDisposable
                     _lastSnapshot = ok.Snapshot;
                     _lastGood = now;
                     var tracked = TrackedWindowResolver.Resolve(ok.Snapshot, _config.WeeklyModels);
-                    _eta.AddSnapshot(tracked, now);
                     foreach (var alert in _alerts.Evaluate(tracked, now))
                         alerts.Add(($"Claude Usage — {alert.WindowLabel} at {alert.Threshold}%",
                                     $"{alert.WindowLabel} usage has reached {alert.Threshold}%."));
@@ -80,9 +78,7 @@ public sealed class MonitorController : IDisposable
     private BurnEstimate? BuildBurn(DateTimeOffset now)
     {
         var tokensPerHour = JsonlActivityScanner.TokensPerHour(_projectsRoot, now, TimeSpan.FromHours(1));
-        var eta = _eta.ProjectSoonest();
-        if (eta is null && tokensPerHour <= 0) return null;     // idle and no projection -> hide burn line
-        return new BurnEstimate(tokensPerHour, eta?.Eta, eta?.Label);
+        return tokensPerHour > 0 ? new BurnEstimate(tokensPerHour) : null;   // idle -> hide burn line
     }
 
     private MonitorView BuildView(IReadOnlyList<TrackedWindow> tracked, string plan, DateTimeOffset now,
@@ -109,7 +105,7 @@ public sealed class MonitorController : IDisposable
         // Spec §7: keep the JSONL activity readout when degraded (it reads disk, works offline). Emit the
         // tokens/hr rate only — not a projected ETA, which would be a misleading countdown off old samples.
         var tokensPerHour = JsonlActivityScanner.TokensPerHour(_projectsRoot, now, TimeSpan.FromHours(1));
-        var burn = tokensPerHour > 0 ? new BurnEstimate(tokensPerHour, null, null) : null;
+        var burn = tokensPerHour > 0 ? new BurnEstimate(tokensPerHour) : null;
         return BuildView(tracked, _lastSnapshot.PlanLabel, now, burn, freshness);
     }
 

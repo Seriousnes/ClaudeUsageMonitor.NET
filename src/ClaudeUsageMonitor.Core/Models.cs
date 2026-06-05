@@ -18,8 +18,8 @@ public record UsageSnapshot(
 /// </summary>
 public record TrackedWindow(string Label, string Key, UsageWindow Window);
 
-/// <summary>Burn-rate readout: tokens/hour and the soonest-projected window's ETA + label.</summary>
-public record BurnEstimate(double TokensPerHour, TimeSpan? EtaSoonest, string? EtaWindowLabel);
+/// <summary>Local JSONL activity readout: tokens consumed per hour over the last hour.</summary>
+public record BurnEstimate(double TokensPerHour);
 
 public enum Status { Green, Yellow, Orange, Red, Stale }
 
