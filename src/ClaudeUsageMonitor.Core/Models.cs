@@ -13,8 +13,8 @@ public record UsageSnapshot(
 
 /// <summary>
 /// A window the user is actively tracking. Label is display text ("Session","Week","Opus");
-/// Key is the stable API field name ("five_hour","seven_day","seven_day_opus"). ETA history and
-/// alert arming MUST key on Key, never Label.
+/// Key is the stable API field name ("five_hour","seven_day","seven_day_opus"). Alert arming
+/// MUST key on Key, never Label.
 /// </summary>
 public record TrackedWindow(string Label, string Key, UsageWindow Window);
 
