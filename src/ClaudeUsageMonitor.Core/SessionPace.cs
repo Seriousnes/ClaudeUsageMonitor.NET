@@ -49,7 +49,7 @@ public static class SessionPace
 
         TimeSpan? timeToLimit = null;
         DateTimeOffset? limitAt = null;
-        if (projected > 100 && usage > 0)
+        if (projected > 100 && usage > 0 && status != Status.Green)   // no countdown when the band is floor-/config-suppressed to green
         {
             var ttl = TimeSpan.FromHours((100 - usage) * elapsed.TotalHours / usage);
             timeToLimit = ttl;

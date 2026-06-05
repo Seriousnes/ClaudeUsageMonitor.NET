@@ -26,6 +26,15 @@ public class SessionPaceTests
     public void Heavy_early_usage_still_trips_red()
         => Assert.Equal(Status.Red, SessionPace.Evaluate(Session(25, 0.05), Now, S).Status);
 
+    [Fact]
+    public void Floor_suppressed_green_has_no_time_to_limit()
+    {
+        var r = SessionPace.Evaluate(Session(8, 0.05), Now, S);   // projected 160 but floor-suppressed to Green
+        Assert.Equal(Status.Green, r.Status);
+        Assert.Null(r.TimeToLimit);
+        Assert.Null(r.LimitAt);
+    }
+
     [Theory]
     [InlineData(47.5, 0.50, Status.Yellow)]   // projected exactly 95
     [InlineData(47.0, 0.50, Status.Green)]    // projected 94
