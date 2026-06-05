@@ -92,14 +92,16 @@ public sealed class MonitorController : IDisposable
         var rows = tracked
             .Select(t => new WindowRow(t.Label, t.Window.Utilization, ResetFormatter.Format(t.Window.ResetsAt, now)))
             .ToList();
-        var status = StatusCalculator.Compute(tracked, grey);
-        return new MonitorView(status, plan, rows, burn, freshness, AgeText(freshness, now));
+        var session = tracked.FirstOrDefault(t => t.Key == "five_hour");
+        var pace = session is null ? null : SessionPace.Evaluate(session.Window, now, _config.Pace);
+        var status = StatusCalculator.Compute(pace, tracked, _config.Pace, grey);
+        return new MonitorView(status, plan, rows, burn, freshness, AgeText(freshness, now), pace);
     }
 
     private MonitorView BuildDegradedView(DateTimeOffset now)
     {
         if (_lastSnapshot is null)
-            return new MonitorView(Status.Stale, "Claude", [], null, Freshness.Stale, "no data");
+            return new MonitorView(Status.Stale, "Claude", [], null, Freshness.Stale, "no data", null);
 
         // _lastGood is set together with _lastSnapshot, so it is valid here.
         var freshness = FreshnessEvaluator.Evaluate(false, _lastGood, now, FreshnessEvaluator.GracePeriod);

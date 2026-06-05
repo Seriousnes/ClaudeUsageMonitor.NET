@@ -2,25 +2,25 @@ namespace ClaudeUsageMonitor.Core;
 
 public static class StatusCalculator
 {
-    public const double YellowAt = 50.0;
-    public const double OrangeAt = 80.0;
-    public const double RedAt = 95.0;
-
-    /// <summary>Stale overrides everything; otherwise color reflects the max utilization across tracked windows.</summary>
-    public static Status Compute(IReadOnlyList<TrackedWindow> tracked, bool isStale)
+    /// <summary>
+    /// Icon status: stale greys everything; otherwise the worst of the Session pace band and the
+    /// high-usage safety net evaluated across all tracked windows.
+    /// </summary>
+    public static Status Compute(PaceResult? pace, IReadOnlyList<TrackedWindow> tracked, PaceSettings settings, bool isStale)
     {
         if (isStale) return Status.Stale;
-        double max = 0;
+        var status = pace?.Status ?? Status.Green;
         foreach (var t in tracked)
-            if (t.Window.Utilization > max) max = t.Window.Utilization;
-        return FromUtilization(max);
+            status = Worse(status, HighUsage(t.Window.Utilization, settings));
+        return status;
     }
 
-    public static Status FromUtilization(double util) => util switch
+    private static Status HighUsage(double util, PaceSettings s)
     {
-        >= RedAt => Status.Red,
-        >= OrangeAt => Status.Orange,
-        >= YellowAt => Status.Yellow,
-        _ => Status.Green,
-    };
+        if (util >= s.HighUsageRed) return Status.Red;
+        if (util >= s.HighUsageOrange) return Status.Orange;
+        return Status.Green;
+    }
+
+    private static Status Worse(Status a, Status b) => (Status)Math.Max((int)a, (int)b);
 }

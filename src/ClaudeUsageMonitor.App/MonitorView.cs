@@ -10,4 +10,5 @@ public record MonitorView(
     IReadOnlyList<WindowRow> Rows,
     BurnEstimate? Burn,
     Freshness Freshness,
-    string AgeText);
+    string AgeText,
+    PaceResult? Pace);
