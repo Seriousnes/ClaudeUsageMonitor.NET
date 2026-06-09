@@ -2,7 +2,7 @@ using ClaudeUsageMonitor.Core;
 
 namespace ClaudeUsageMonitor.App;
 
-public record WindowRow(string Label, double Utilization, string ResetText);
+public record WindowRow(string Label, double Utilization, string ResetText, Status? Band);
 
 public record MonitorView(
     Status Status,

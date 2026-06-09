@@ -57,7 +57,7 @@ public sealed class MonitorController : IDisposable
                 case PollResult.Ok ok:
                     _lastSnapshot = ok.Snapshot;
                     _lastGood = now;
-                    var tracked = TrackedWindowResolver.Resolve(ok.Snapshot, _config.WeeklyModels);
+                    var tracked = ResolveTracked(ok.Snapshot, now);
                     foreach (var alert in _alerts.Evaluate(tracked, now))
                         alerts.Add(($"Claude Usage — {alert.WindowLabel} at {alert.Threshold}%",
                                     $"{alert.WindowLabel} usage has reached {alert.Threshold}%."));
@@ -75,6 +75,14 @@ public sealed class MonitorController : IDisposable
         Updated?.Invoke(view);
     }
 
+    // Resolve the snapshot, then zero any window whose reset time has already passed. Applied in both
+    // the live and degraded paths so the reset flows downstream consistently: bars empty to green, the
+    // percentage shows 0, SessionPace reads 0, and AlertEngine re-arms below its lowest threshold.
+    private IReadOnlyList<TrackedWindow> ResolveTracked(UsageSnapshot snapshot, DateTimeOffset now)
+        => TrackedWindowResolver.Resolve(snapshot, _config.WeeklyModels)
+            .Select(t => t with { Window = WindowReset.Apply(t.Window, now) })
+            .ToList();
+
     private BurnEstimate? BuildBurn(DateTimeOffset now)
     {
         var tokensPerHour = JsonlActivityScanner.TokensPerHour(_projectsRoot, now, TimeSpan.FromHours(1));
@@ -85,8 +93,16 @@ public sealed class MonitorController : IDisposable
         BurnEstimate? burn, Freshness freshness)
     {
         var grey = freshness == Freshness.Stale;
+        // Bar colour keys on Label=="Week" while alert arming keys on Key — safe here because the band is
+        // recomputed statelessly on every render and carries no cross-poll state to corrupt.
         var rows = tracked
-            .Select(t => new WindowRow(t.Label, t.Window.Utilization, ResetFormatter.Format(t.Window.ResetsAt, now)))
+            .Select(t => new WindowRow(
+                t.Label,
+                t.Window.Utilization,
+                ResetFormatter.Format(t.Window.ResetsAt, now),
+                t.Key == "five_hour" || t.Label == "Week"
+                    ? UsageBand.Evaluate(t.Window.Utilization, _config.UsageBand)
+                    : null))
             .ToList();
         var session = tracked.FirstOrDefault(t => t.Key == "five_hour");
         var pace = session is null ? null : SessionPace.Evaluate(session.Window, now, _config.Pace);
@@ -101,7 +117,7 @@ public sealed class MonitorController : IDisposable
 
         // _lastGood is set together with _lastSnapshot, so it is valid here.
         var freshness = FreshnessEvaluator.Evaluate(false, _lastGood, now, FreshnessEvaluator.GracePeriod);
-        var tracked = TrackedWindowResolver.Resolve(_lastSnapshot, _config.WeeklyModels);
+        var tracked = ResolveTracked(_lastSnapshot, now);
         // Spec §7: keep the JSONL activity readout when degraded (it reads disk, works offline). Emit the
         // tokens/hr rate only — not a projected ETA, which would be a misleading countdown off old samples.
         var tokensPerHour = JsonlActivityScanner.TokensPerHour(_projectsRoot, now, TimeSpan.FromHours(1));
