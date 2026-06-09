@@ -10,6 +10,7 @@ public class MonitorConfig
     public bool StartWithWindows { get; set; } = true;
     public bool ClickThrough { get; set; } = false;
     public PaceSettings Pace { get; set; } = new();
+    public UsageBandSettings UsageBand { get; set; } = new();
 }
 
 public class WidgetPosition
@@ -33,4 +34,15 @@ public class PaceSettings
     public double EarlyGracePercent { get; set; } = 15;
     public double HighUsageOrange { get; set; } = 85;
     public double HighUsageRed { get; set; } = 95;
+}
+
+/// <summary>
+/// Fill-% thresholds for the discrete four-band colour of the Session and Week usage bars. This is
+/// each bar's own utilization band — distinct from the pace-based icon colour in <see cref="PaceSettings"/>.
+/// </summary>
+public class UsageBandSettings
+{
+    public double YellowPercent { get; set; } = 40;
+    public double OrangePercent { get; set; } = 65;
+    public double RedPercent { get; set; } = 85;
 }
