@@ -12,14 +12,8 @@ public static class IconRenderer
 
     public static Icon Render(Status status)
     {
-        var color = status switch
-        {
-            Status.Green => Color.FromArgb(0x3F, 0xB9, 0x50),
-            Status.Yellow => Color.FromArgb(0xE6, 0xC2, 0x29),
-            Status.Orange => Color.FromArgb(0xE6, 0x8A, 0x00),
-            Status.Red => Color.FromArgb(0xD9, 0x3A, 0x2B),
-            _ => Color.FromArgb(0x9E, 0x9E, 0x9E),    // Stale = grey
-        };
+        var rgb = StatusPalette.Rgb(status);
+        var color = Color.FromArgb(rgb.R, rgb.G, rgb.B);
 
         using var bmp = new Bitmap(Size, Size, PixelFormat.Format32bppArgb);
         using (var g = Graphics.FromImage(bmp))
