@@ -101,6 +101,15 @@ public partial class WidgetWindow : Window
             Minimum = 0, Maximum = 100, Value = row.Utilization,
             Height = 6, Margin = new Thickness(0, 3, 0, 1),
         };
+        if (row.Band is { } band)
+        {
+            var (r, g, b) = StatusPalette.Rgb(band);
+            bar.Foreground = new SolidColorBrush(Color.FromRgb(r, g, b));
+        }
+        else
+        {
+            bar.Foreground = new SolidColorBrush(Color.FromRgb(0x6E, 0x6E, 0x6E));   // neutral secondary fill
+        }
         var reset = new TextBlock
         {
             Text = row.ResetText,
