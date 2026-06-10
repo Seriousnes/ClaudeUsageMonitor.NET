@@ -1,3 +1,4 @@
+using System.Net;
 using System.Net.Http.Headers;
 
 namespace ClaudeUsageMonitor.Core;
@@ -18,7 +19,14 @@ public class HttpUsageApiClient(HttpClient http) : IUsageApiClient
         req.Headers.Add("anthropic-beta", "oauth-2025-04-20");
 
         using var resp = await http.SendAsync(req, ct);
-        resp.EnsureSuccessStatusCode();
+        if (!resp.IsSuccessStatusCode)
+        {
+            // Only a 429 carries a meaningful Retry-After; don't read it on other failures.
+            var retryAfter = resp.StatusCode == HttpStatusCode.TooManyRequests
+                ? resp.Headers.RetryAfter?.Delta
+                : null;
+            throw new UsageApiException((int)resp.StatusCode, resp.ReasonPhrase, retryAfter);
+        }
         return await resp.Content.ReadAsStringAsync(ct);
     }
 }

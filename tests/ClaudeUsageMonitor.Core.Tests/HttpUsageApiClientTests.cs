@@ -1,17 +1,21 @@
 using System.Net;
+using System.Net.Http.Headers;
 using ClaudeUsageMonitor.Core;
 
 namespace ClaudeUsageMonitor.Core.Tests;
 
 public class HttpUsageApiClientTests
 {
-    private sealed class CapturingHandler(string body, HttpStatusCode status) : HttpMessageHandler
+    private sealed class CapturingHandler(string body, HttpStatusCode status, TimeSpan? retryAfter = null)
+        : HttpMessageHandler
     {
         public HttpRequestMessage? Captured { get; private set; }
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
         {
             Captured = request;
-            return Task.FromResult(new HttpResponseMessage(status) { Content = new StringContent(body) });
+            var resp = new HttpResponseMessage(status) { Content = new StringContent(body) };
+            if (retryAfter is { } ra) resp.Headers.RetryAfter = new RetryConditionHeaderValue(ra);
+            return Task.FromResult(resp);
         }
     }
 
@@ -32,10 +36,22 @@ public class HttpUsageApiClientTests
     }
 
     [Fact]
-    public async Task Non_success_status_throws()
+    public async Task Non_success_status_throws_with_status_and_no_retry_after()
     {
         var handler = new CapturingHandler("nope", HttpStatusCode.Unauthorized);
         var client = new HttpUsageApiClient(new HttpClient(handler));
-        await Assert.ThrowsAsync<HttpRequestException>(() => client.GetUsageJsonAsync("tok"));
+        var ex = await Assert.ThrowsAsync<UsageApiException>(() => client.GetUsageJsonAsync("tok"));
+        Assert.Equal(401, ex.StatusCode);
+        Assert.Null(ex.RetryAfter);
+    }
+
+    [Fact]
+    public async Task Rate_limited_throws_with_retry_after_delta()
+    {
+        var handler = new CapturingHandler("slow down", HttpStatusCode.TooManyRequests, TimeSpan.FromSeconds(120));
+        var client = new HttpUsageApiClient(new HttpClient(handler));
+        var ex = await Assert.ThrowsAsync<UsageApiException>(() => client.GetUsageJsonAsync("tok"));
+        Assert.Equal(429, ex.StatusCode);
+        Assert.Equal(TimeSpan.FromSeconds(120), ex.RetryAfter);
     }
 }

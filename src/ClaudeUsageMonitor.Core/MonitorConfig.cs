@@ -1,8 +1,12 @@
+using System.Text.Json.Serialization;
+
 namespace ClaudeUsageMonitor.Core;
 
 public class MonitorConfig
 {
-    public int PollIntervalSeconds { get; set; } = 60;
+    public int PollIntervalSeconds { get; set; } = 60;            // cadence while a Claude session is active
+    public int ActiveWindowSeconds { get; set; } = 300;          // JSONL quiet time before a session counts as idle
+    public int IdlePollIntervalSeconds { get; set; } = 3600;      // slow heartbeat when no JSONL activity
     public int[] AlertThresholds { get; set; } = [80, 95];
     public string[] WeeklyModels { get; set; } = [];
     public double WidgetOpacity { get; set; } = 0.92;
@@ -11,6 +15,11 @@ public class MonitorConfig
     public bool ClickThrough { get; set; } = false;
     public PaceSettings Pace { get; set; } = new();
     public UsageBandSettings UsageBand { get; set; } = new();
+
+    /// <summary>Next time polling is allowed after a 429 back-off. Persisted so the back-off survives a
+    /// restart; written only while rate-limited and removed once polling recovers.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public DateTimeOffset? RateLimitedUntil { get; set; }
 }
 
 public class WidgetPosition

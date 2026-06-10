@@ -10,31 +10,50 @@ public sealed class MonitorController : IDisposable
 
     private readonly UsagePoller _poller;
     private readonly AlertEngine _alerts;
-    private readonly JsonlWatcher? _watcher;
+    private readonly IErrorLog _errorLog;
     private readonly HttpClient _http = new();
+    private readonly JsonlWatcher? _watcher;
 
     private readonly Lock _gate = new();   // serializes OnPolled state across overlapping poll triggers
     private UsageSnapshot? _lastSnapshot;
     private DateTimeOffset _lastGood;
+    private string? _lastError;            // last failure message; cleared on a successful poll
+    private long _lastActivityTicks;       // UtcTicks of the last JSONL change (watcher thread ↔ poll thread)
+    private long _lastPollTicks;           // UtcTicks of the last poll attempt
 
     public event Action<MonitorView>? Updated;
     public event Action<string, string>? Alert;
 
-    public MonitorController(string credentialsPath, string projectsRoot, MonitorConfig config, TimeProvider time)
+    public MonitorController(string credentialsPath, string projectsRoot, MonitorConfig config,
+        TimeProvider time, IErrorLog errorLog, IRateLimitGate rateLimitGate)
     {
         _config = config;
         _time = time;
         _projectsRoot = projectsRoot;
+        _errorLog = errorLog;
 
         var auth = new AuthProvider(credentialsPath, new StubTokenRefresher(), time);
         var client = new HttpUsageApiClient(_http);
-        _poller = new UsagePoller(auth, client, time, () => TimeSpan.FromSeconds(_config.PollIntervalSeconds));
+        _poller = new UsagePoller(auth, client, time, () => TimeSpan.FromSeconds(_config.PollIntervalSeconds),
+            rateLimitGate, ShouldPoll);
         _alerts = new AlertEngine(_config.AlertThresholds);
         _poller.Polled += OnPolled;
 
+        // Watch JSONL activity to *modulate* the poll cadence — it records the last-change time only and never
+        // triggers a poll itself (that was the old over-polling). ShouldPoll turns it into active/idle cadence.
         if (Directory.Exists(projectsRoot))
-            _watcher = new JsonlWatcher(projectsRoot, time, TimeSpan.FromSeconds(2), () => _ = _poller.TriggerAsync());
+            _watcher = new JsonlWatcher(projectsRoot, time, TimeSpan.FromSeconds(2),
+                () => Interlocked.Exchange(ref _lastActivityTicks, _time.GetUtcNow().UtcTicks));
     }
+
+    // Active session (JSONL changed within ActiveWindowSeconds) → poll every PollIntervalSeconds; otherwise a
+    // slow IdlePollIntervalSeconds heartbeat. Read on the poller's timer thread; timestamps via Interlocked.
+    private bool ShouldPoll() => PollSchedule.ShouldPoll(
+        _time.GetUtcNow(),
+        new DateTimeOffset(Interlocked.Read(ref _lastActivityTicks), TimeSpan.Zero),
+        new DateTimeOffset(Interlocked.Read(ref _lastPollTicks), TimeSpan.Zero),
+        TimeSpan.FromSeconds(_config.ActiveWindowSeconds),
+        TimeSpan.FromSeconds(_config.IdlePollIntervalSeconds));
 
     public void Start() => _poller.Start();
 
@@ -43,6 +62,7 @@ public sealed class MonitorController : IDisposable
     private void OnPolled(PollResult result)
     {
         var now = _time.GetUtcNow();
+        Interlocked.Exchange(ref _lastPollTicks, now.UtcTicks);   // feeds the idle-heartbeat decision in ShouldPoll
         MonitorView view;
         var alerts = new List<(string Title, string Text)>();
 
@@ -55,6 +75,8 @@ public sealed class MonitorController : IDisposable
             switch (result)
             {
                 case PollResult.Ok ok:
+                    _errorLog.RecordSuccess();
+                    _lastError = null;
                     _lastSnapshot = ok.Snapshot;
                     _lastGood = now;
                     var tracked = ResolveTracked(ok.Snapshot, now);
@@ -64,7 +86,13 @@ public sealed class MonitorController : IDisposable
                     view = BuildView(tracked, ok.Snapshot.PlanLabel, now, BuildBurn(now), Freshness.Live);
                     break;
 
-                default:   // PollResult.Stale — a failed poll no longer greys immediately (spec §5)
+                case PollResult.Stale stale:   // failed poll no longer greys immediately (spec §5); log + surface it
+                    _errorLog.RecordFailure(stale.Context, stale.Message);
+                    _lastError = stale.Message;
+                    view = BuildDegradedView(now);
+                    break;
+
+                default:
                     view = BuildDegradedView(now);
                     break;
             }
@@ -107,13 +135,13 @@ public sealed class MonitorController : IDisposable
         var session = tracked.FirstOrDefault(t => t.Key == "five_hour");
         var pace = session is null ? null : SessionPace.Evaluate(session.Window, now, _config.Pace);
         var status = StatusCalculator.Compute(pace, tracked, _config.Pace, grey);
-        return new MonitorView(status, plan, rows, burn, freshness, AgeText(freshness, now), pace);
+        return new MonitorView(status, plan, rows, burn, freshness, AgeText(freshness, now), pace, _lastError);
     }
 
     private MonitorView BuildDegradedView(DateTimeOffset now)
     {
         if (_lastSnapshot is null)
-            return new MonitorView(Status.Stale, "Claude", [], null, Freshness.Stale, "no data", null);
+            return new MonitorView(Status.Stale, "Claude", [], null, Freshness.Stale, "no data", null, _lastError);
 
         // _lastGood is set together with _lastSnapshot, so it is valid here.
         var freshness = FreshnessEvaluator.Evaluate(false, _lastGood, now, FreshnessEvaluator.GracePeriod);

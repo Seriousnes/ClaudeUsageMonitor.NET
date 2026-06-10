@@ -11,4 +11,5 @@ public record MonitorView(
     BurnEstimate? Burn,
     Freshness Freshness,
     string AgeText,
-    PaceResult? Pace);
+    PaceResult? Pace,
+    string? LastError);

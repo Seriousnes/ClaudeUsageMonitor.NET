@@ -68,6 +68,18 @@ public partial class WidgetWindow : Window
         {
             EtaText.Visibility = Visibility.Collapsed;
         }
+
+        // Last failure reason, cleared once a poll succeeds. One line, ellipsised; full text on hover.
+        if (!string.IsNullOrEmpty(view.LastError))
+        {
+            ErrorText.Text = $"⚠ {view.LastError}";
+            ErrorText.ToolTip = view.LastError;
+            ErrorText.Visibility = Visibility.Visible;
+        }
+        else
+        {
+            ErrorText.Visibility = Visibility.Collapsed;
+        }
     }
 
     private static string FormatBurn(PaceResult? pace, BurnEstimate? burn)
@@ -98,8 +110,11 @@ public partial class WidgetWindow : Window
 
         var bar = new ProgressBar
         {
-            Minimum = 0, Maximum = 100, Value = row.Utilization,
-            Height = 6, Margin = new Thickness(0, 3, 0, 1),
+            Minimum = 0,
+            Maximum = 100,
+            Value = row.Utilization,
+            Height = 6,
+            Margin = new Thickness(0, 3, 0, 1),
         };
         if (row.Band is { } band)
         {

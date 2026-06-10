@@ -21,6 +21,8 @@
             </Grid>
             <StackPanel x:Name="RowsPanel"/>
             <TextBlock x:Name="EtaText" Margin="0,8,0,0" Visibility="Collapsed" TextWrapping="Wrap"/>
+            <TextBlock x:Name="ErrorText" Margin="0,8,0,0" Visibility="Collapsed" FontSize="11"
+                       Foreground="#E0E06C6C" TextTrimming="CharacterEllipsis"/>
         </StackPanel>
     </Border>
 </Window>

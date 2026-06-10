@@ -31,7 +31,7 @@ public class UsagePollerTests
     public async Task PollOnce_returns_Ok_snapshot()
     {
         var time = new FakeTimeProvider(new DateTimeOffset(2026, 6, 4, 10, 0, 0, TimeSpan.Zero));
-        var poller = new UsagePoller(ValidAuth(time), new FakeClient(Body), time, () => TimeSpan.FromSeconds(60));
+        var poller = new UsagePoller(ValidAuth(time), new FakeClient(Body), time, () => TimeSpan.FromSeconds(60), new InMemoryRateLimitGate(), () => true);
         var result = await poller.PollOnceAsync();
         var ok = Assert.IsType<PollResult.Ok>(result);
         Assert.Equal(13.0, ok.Snapshot.FiveHour.Utilization);
@@ -43,7 +43,7 @@ public class UsagePollerTests
     {
         var time = new FakeTimeProvider(new DateTimeOffset(2026, 6, 4, 10, 0, 0, TimeSpan.Zero));
         var badAuth = new AuthProvider("missing.json", new StubTokenRefresher(), time);
-        var poller = new UsagePoller(badAuth, new FakeClient(Body), time, () => TimeSpan.FromSeconds(60));
+        var poller = new UsagePoller(badAuth, new FakeClient(Body), time, () => TimeSpan.FromSeconds(60), new InMemoryRateLimitGate(), () => true);
         Assert.IsType<PollResult.Stale>(await poller.PollOnceAsync());
     }
 
@@ -52,7 +52,7 @@ public class UsagePollerTests
     {
         var time = new FakeTimeProvider(new DateTimeOffset(2026, 6, 4, 10, 0, 0, TimeSpan.Zero));
         var poller = new UsagePoller(ValidAuth(time), new FakeClient(null, new HttpRequestException("offline")),
-            time, () => TimeSpan.FromSeconds(60));
+            time, () => TimeSpan.FromSeconds(60), new InMemoryRateLimitGate(), () => true);
         Assert.IsType<PollResult.Stale>(await poller.PollOnceAsync());
     }
 
@@ -60,7 +60,7 @@ public class UsagePollerTests
     public async Task Timer_fires_polls_on_interval()
     {
         var time = new FakeTimeProvider(new DateTimeOffset(2026, 6, 4, 10, 0, 0, TimeSpan.Zero));
-        var poller = new UsagePoller(ValidAuth(time), new FakeClient(Body), time, () => TimeSpan.FromSeconds(60));
+        var poller = new UsagePoller(ValidAuth(time), new FakeClient(Body), time, () => TimeSpan.FromSeconds(60), new InMemoryRateLimitGate(), () => true);
         var count = 0;
         var gate = new TaskCompletionSource();
         poller.Polled += _ => { if (Interlocked.Increment(ref count) >= 2) gate.TrySetResult(); };
@@ -71,5 +71,58 @@ public class UsagePollerTests
         await gate.Task.WaitAsync(TimeSpan.FromSeconds(5));
         Assert.True(count >= 2);
         poller.Dispose();
+    }
+
+    [Fact]
+    public void Timer_skips_poll_when_shouldPoll_is_false()
+    {
+        var time = new FakeTimeProvider(new DateTimeOffset(2026, 6, 4, 10, 0, 0, TimeSpan.Zero));
+        var poller = new UsagePoller(ValidAuth(time), new FakeClient(Body), time,
+            () => TimeSpan.FromSeconds(60), new InMemoryRateLimitGate(), () => false);
+        var count = 0;
+        poller.Polled += _ => Interlocked.Increment(ref count);
+
+        poller.Start();                          // due 0
+        time.Advance(TimeSpan.FromSeconds(60));  // tick — gate false, no poll
+        time.Advance(TimeSpan.FromSeconds(60));  // another tick — still gated
+
+        Assert.Equal(0, Volatile.Read(ref count));
+        poller.Dispose();
+    }
+
+    [Fact]
+    public async Task PollOnce_on_429_records_backoff_deadline()
+    {
+        var time = new FakeTimeProvider(new DateTimeOffset(2026, 6, 4, 10, 0, 0, TimeSpan.Zero));
+        var limit = new InMemoryRateLimitGate();
+        var client = new FakeClient(null, new UsageApiException(429, "Too Many Requests", TimeSpan.FromSeconds(300)));
+        var poller = new UsagePoller(ValidAuth(time), client, time, () => TimeSpan.FromSeconds(60), limit, () => true);
+
+        Assert.IsType<PollResult.Stale>(await poller.PollOnceAsync());
+        Assert.Equal(time.GetUtcNow().AddSeconds(300), limit.RetryAt);
+    }
+
+    [Fact]
+    public async Task PollOnce_skips_api_while_backed_off()
+    {
+        var time = new FakeTimeProvider(new DateTimeOffset(2026, 6, 4, 10, 0, 0, TimeSpan.Zero));
+        var limit = new InMemoryRateLimitGate { RetryAt = time.GetUtcNow().AddMinutes(5) };
+        // The client throws if reached — the result proving back-off must be the rate-limit message, not this.
+        var client = new FakeClient(null, new InvalidOperationException("API must not be called during back-off"));
+        var poller = new UsagePoller(ValidAuth(time), client, time, () => TimeSpan.FromSeconds(60), limit, () => true);
+
+        var stale = Assert.IsType<PollResult.Stale>(await poller.PollOnceAsync());
+        Assert.Contains("next refresh", stale.Message);
+    }
+
+    [Fact]
+    public async Task PollOnce_clears_backoff_after_window_passes_and_poll_succeeds()
+    {
+        var time = new FakeTimeProvider(new DateTimeOffset(2026, 6, 4, 10, 0, 0, TimeSpan.Zero));
+        var limit = new InMemoryRateLimitGate { RetryAt = time.GetUtcNow().AddSeconds(-1) };   // window already elapsed
+        var poller = new UsagePoller(ValidAuth(time), new FakeClient(Body), time, () => TimeSpan.FromSeconds(60), limit, () => true);
+
+        Assert.IsType<PollResult.Ok>(await poller.PollOnceAsync());
+        Assert.Null(limit.RetryAt);
     }
 }

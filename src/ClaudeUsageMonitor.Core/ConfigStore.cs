@@ -10,6 +10,8 @@ public class ConfigStore(string path)
         WriteIndented = true,
     };
 
+    private readonly Lock _writeLock = new();   // poll thread (rate-limit write) and UI thread can both Save
+
     public MonitorConfig Load()
     {
         if (!File.Exists(path))
@@ -27,9 +29,12 @@ public class ConfigStore(string path)
 
     public void Save(MonitorConfig config)
     {
-        var dir = Path.GetDirectoryName(path);
-        if (!string.IsNullOrEmpty(dir))
-            Directory.CreateDirectory(dir);   // no-op if it already exists
-        File.WriteAllText(path, JsonSerializer.Serialize(config, Options));
+        lock (_writeLock)
+        {
+            var dir = Path.GetDirectoryName(path);
+            if (!string.IsNullOrEmpty(dir))
+                Directory.CreateDirectory(dir);   // no-op if it already exists
+            File.WriteAllText(path, JsonSerializer.Serialize(config, Options));
+        }
     }
 }

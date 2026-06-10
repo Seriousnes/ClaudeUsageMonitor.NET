@@ -11,6 +11,7 @@ public partial class App : Application
     private WidgetWindow? _widget;
     private ConfigStore? _configStore;
     private MonitorConfig? _config;
+    private IErrorLog? _errorLog;
     private string _configPath = "";
 
     protected override void OnStartup(StartupEventArgs e)
@@ -58,7 +59,12 @@ public partial class App : Application
         _tray.SetStartupChecked(StartupRegistry.IsEnabled());
         _tray.SetClickThroughChecked(_config.ClickThrough);
 
-        _controller = new MonitorController(credentialsPath, projectsRoot, _config, TimeProvider.System);
+        var logPath = Path.Combine(Path.GetDirectoryName(_configPath)!, "log.txt");
+        _errorLog = new FileErrorLog(logPath, TimeProvider.System, TimeSpan.FromMinutes(10));
+        var rateLimitGate = new ConfigRateLimitGate(_config, _configStore);
+
+        _controller = new MonitorController(credentialsPath, projectsRoot, _config, TimeProvider.System,
+            _errorLog, rateLimitGate);
         _controller.Updated += OnViewUpdated;
         _controller.Alert += OnAlert;
         _controller.Start();
@@ -86,7 +92,7 @@ public partial class App : Application
     private void OpenSettings()
     {
         if (_configStore is null || _config is null) return;
-        if (!File.Exists(_configPath)) _configStore.Save(_config);
+        _configStore.Save(_config);   // re-materialize so newly-added settings appear in the file before editing
         Process.Start(new ProcessStartInfo(_configPath) { UseShellExecute = true });
     }
 
@@ -124,6 +130,7 @@ public partial class App : Application
     {
         // A tray-only app must not die from a transient failure in a menu action or a background update
         // (e.g. Settings has no .json association, or an HKCU write is denied). Surface and keep running.
+        _errorLog?.RecordFailure("ui", $"{e.Exception.GetType().Name}: {e.Exception.Message}");
         _tray?.ShowToast("Claude Usage Monitor", e.Exception.Message);
         e.Handled = true;
     }
